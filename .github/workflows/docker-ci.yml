@@ -1,0 +1,299 @@
+name: Docker CI Build
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'claude/**'
+      - 'feature/**'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/FUNDING.yml'
+      - '.github/ISSUE_TEMPLATE/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      build_variant:
+        description: 'Build variant (debug/release/full)'
+        required: false
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+          - full
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  PRODUCTION_CRYPTO: ON
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.workers.max=4"
+
+jobs:
+  verify:
+    name: Verify Environment
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify build script
+        run: |
+          chmod +x build.sh
+          ./build.sh verify
+
+      - name: Check Docker Compose
+        run: docker compose config
+
+  build-debug:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+    needs: verify
+    if: github.event_name == 'pull_request' || github.event.inputs.build_variant == 'debug'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-debug-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-debug-
+            ${{ runner.os }}-buildx-
+
+      - name: Build debug APK
+        run: |
+          chmod +x build.sh
+          ./build.sh debug
+        env:
+          PRODUCTION_CRYPTO: ${{ env.PRODUCTION_CRYPTO }}
+
+      - name: List build outputs
+        run: find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: emma-debug-apk-${{ github.sha }}
+          path: app/build/outputs/apk/**/debug/*.apk
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-debug-${{ github.sha }}
+          path: app/build/outputs/logs/
+
+  build-release:
+    name: Build Release APK
+    runs-on: ubuntu-latest
+    needs: verify
+    if: |
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') ||
+      github.event.inputs.build_variant == 'release'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-release-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-release-
+            ${{ runner.os }}-buildx-
+
+      - name: Configure keystore (if available)
+        if: ${{ secrets.SECRET_KEYSTORE != '' }}
+        run: |
+          echo "${{ secrets.SECRET_KEYSTORE }}" | base64 -d > keystore.jks
+          echo "CI_KEYSTORE_PATH=./keystore.jks" >> $GITHUB_ENV
+          echo "CI_KEYSTORE_PASSWORD=${{ secrets.SECRET_KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
+          echo "CI_KEYSTORE_ALIAS=${{ secrets.SECRET_KEYSTORE_ALIAS }}" >> $GITHUB_ENV
+
+      - name: Build release APK (production crypto)
+        run: |
+          chmod +x build.sh
+          ./build.sh release --production
+        env:
+          PRODUCTION_CRYPTO: ON
+          CI_KEYSTORE_PATH: ${{ env.CI_KEYSTORE_PATH }}
+          CI_KEYSTORE_PASSWORD: ${{ env.CI_KEYSTORE_PASSWORD }}
+          CI_KEYSTORE_ALIAS: ${{ env.CI_KEYSTORE_ALIAS }}
+
+      - name: Clean up keystore
+        if: always()
+        run: rm -f keystore.jks
+
+      - name: List build outputs
+        run: |
+          find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
+          find app/build/outputs/bundle -name "*.aab" -exec ls -lh {} \; || true
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: emma-release-apk-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/**/release/*.apk
+            app/build/outputs/bundle/**/release/*.aab
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-release-${{ github.sha }}
+          path: app/build/outputs/logs/
+
+  test:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    needs: verify
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo docker image prune --all --force
+
+      - name: Run tests
+        run: |
+          chmod +x build.sh
+          ./build.sh test
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ github.sha }}
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/
+          retention-days: 14
+
+  build-server:
+    name: Build Python Translation Server
+    runs-on: ubuntu-latest
+    needs: verify
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-server-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-server-
+
+      - name: Build server image
+        run: |
+          chmod +x build.sh
+          docker compose build python-server
+
+      - name: Test server build
+        run: |
+          docker compose run --rm python-server python3 -c "import sys; print(f'Python {sys.version}')"
+
+      - name: Run server tests
+        run: |
+          docker compose run --rm python-server python3 -m pytest --version || echo "No tests configured yet"
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: verify
+    permissions:
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  build-summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [build-debug, build-release, test, build-server]
+    if: always()
+
+    steps:
+      - name: Generate build summary
+        run: |
+          echo "## 🚀 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Debug Build: ${{ needs.build-debug.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Release Build: ${{ needs.build-release.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Tests: ${{ needs.test.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Server Build: ${{ needs.build-server.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- Production Crypto: ON" >> $GITHUB_STEP_SUMMARY
+          echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

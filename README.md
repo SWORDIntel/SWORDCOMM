@@ -1,18 +1,30 @@
 # Molly Security Translation
 
 ## Danish-English Translation with Maximum EL2 Defense
+
+### Build Status
+
+[![Docker CI Build](https://github.com/SWORDIntel/SWORDCOMM/actions/workflows/docker-ci.yml/badge.svg)](https://github.com/SWORDIntel/SWORDCOMM/actions/workflows/docker-ci.yml)
+[![Docker Release](https://github.com/SWORDIntel/SWORDCOMM/actions/workflows/docker-release.yml/badge.svg)](https://github.com/SWORDIntel/SWORDCOMM/actions/workflows/docker-release.yml)
+[![Security Scanning](https://github.com/SWORDIntel/SWORDCOMM/actions/workflows/security-scan.yml/badge.svg)](https://github.com/SWORDIntel/SWORDCOMM/actions/workflows/security-scan.yml)
+[![Nightly Build](https://github.com/SWORDIntel/SWORDCOMM/actions/workflows/nightly-build.yml/badge.svg)](https://github.com/SWORDIntel/SWORDCOMM/actions/workflows/nightly-build.yml)
+
+### Legacy Status
+
 [![Test](https://github.com/mollyim/mollyim-android/workflows/Test/badge.svg)](https://github.com/mollyim/mollyim-android/actions)
 [![Reproducible build](https://github.com/mollyim/mollyim-android/actions/workflows/reprocheck.yml/badge.svg)](https://github.com/mollyim/mollyim-android/actions/workflows/reprocheck.yml)
 [![Translation status](https://hosted.weblate.org/widgets/molly-instant-messenger/-/svg-badge.svg)](https://hosted.weblate.org/engage/molly-instant-messenger/?utm_source=widget)
-[![Financial contributors](https://opencollective.com/mollyim/tiers/badge.svg)](https://opencollective.com/mollyim#category-CONTRIBUTE)
-[![Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
 
 A security-hardened fork of Molly (Signal fork) that adds real-time Danish-to-English translation while defending against nation-state level EL2 hypervisor surveillance.
+
+### Project Status
 
 ![Security Status](https://img.shields.io/badge/Security-Maximum-red)
 ![Platform](https://img.shields.io/badge/Platform-Android%2010%2B-green)
 ![Device](https://img.shields.io/badge/Device-Pixel%206A%2F8A-blue)
 ![Encryption](https://img.shields.io/badge/Encryption-Post--Quantum-purple)
+![Build System](https://img.shields.io/badge/Build-Docker-blue)
+![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-green)
 
 ---
 
@@ -402,6 +414,7 @@ This software is provided for educational and research purposes only. Users are 
 ### Quick Links
 
 - **[Docker Build Guide](DOCKER_BUILD.md)** - Dockerized build system (recommended)
+- **[CI/CD Documentation](CI_CD.md)** - GitHub Actions workflows and automation
 - **[Building from Source](BUILDING.md)** - Detailed build instructions
 - **[Production Build Guide](BUILD_GUIDE.md)** - Production crypto configuration
 - **[iOS Version](README-iOS.md)** - EMMA for iOS/Signal-iOS
@@ -415,10 +428,16 @@ EMMA-android/
 ├── README.md                           # This file (Android)
 ├── README-iOS.md                       # iOS version README
 ├── DOCKER_BUILD.md                     # Docker build system guide
+├── CI_CD.md                            # CI/CD workflows documentation
 ├── BUILDING.md                         # Build instructions
 ├── BUILD_GUIDE.md                      # Production crypto build guide
 ├── build.sh                            # Docker build wrapper script
 ├── docker-compose.yml                  # Docker orchestration
+├── .github/workflows/                  # GitHub Actions CI/CD
+│   ├── docker-ci.yml                   # Main CI build workflow
+│   ├── docker-release.yml              # Release workflow
+│   ├── security-scan.yml               # Security scanning
+│   └── nightly-build.yml               # Nightly builds
 └── docs/
     ├── FINAL_IMPLEMENTATION_REPORT.md  # 100% implementation report
     ├── IMPLEMENTATION_STATUS.md        # Historical tracking
