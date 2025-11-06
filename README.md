@@ -1,6 +1,11 @@
 # Molly Security Translation
 
 ## Danish-English Translation with Maximum EL2 Defense
+[![Test](https://github.com/mollyim/mollyim-android/workflows/Test/badge.svg)](https://github.com/mollyim/mollyim-android/actions)
+[![Reproducible build](https://github.com/mollyim/mollyim-android/actions/workflows/reprocheck.yml/badge.svg)](https://github.com/mollyim/mollyim-android/actions/workflows/reprocheck.yml)
+[![Translation status](https://hosted.weblate.org/widgets/molly-instant-messenger/-/svg-badge.svg)](https://hosted.weblate.org/engage/molly-instant-messenger/?utm_source=widget)
+[![Financial contributors](https://opencollective.com/mollyim/tiers/badge.svg)](https://opencollective.com/mollyim#category-CONTRIBUTE)
+[![Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
 
 A security-hardened fork of Molly (Signal fork) that adds real-time Danish-to-English translation while defending against nation-state level EL2 hypervisor surveillance.
 
@@ -28,8 +33,10 @@ This application implements aggressive countermeasures against sophisticated sur
 ### Translation Capabilities
 - **Real-time Danish-to-English translation** using quantized MarianMT/OPUS models
 - **On-device inference** with INT8 quantization for efficiency
+- **Automatic fallback** - seamlessly switches between network and on-device translation
 - **Network offloading** to local Linux servers via Kyber-1024 post-quantum encryption
 - **Translation caching** with encrypted storage
+- **Offline operation** - fully functional without network connectivity
 
 ### Security Features
 - **EL2 Hypervisor Detection** using hardware performance counters
@@ -156,6 +163,25 @@ For protecting specific conversations:
 3. System will apply maximum security for this conversation only
 4. Other conversations remain at normal security levels
 
+### Translation Strategy
+
+Configure translation behavior in `Settings > Translation`:
+
+**Network-First (Default)**: Attempts network translation first, falls back to on-device if unavailable
+- Best for: Users with reliable internet connection
+- Quality: Highest (server has more resources)
+- Privacy: Moderate (encrypted local network only)
+
+**On-Device-First**: Attempts on-device translation first, falls back to network if needed
+- Best for: Privacy-conscious users, unreliable network
+- Quality: Good (INT8 quantized model)
+- Privacy: Maximum when on-device succeeds
+
+**On-Device-Only**: Only uses on-device translation, never connects to network
+- Best for: Air-gapped devices, maximum privacy
+- Quality: Good (INT8 quantized model)
+- Privacy: Maximum (no network exposure)
+
 ### Network Offloading
 
 To use a Linux server for translation:
@@ -173,6 +199,8 @@ To use a Linux server for translation:
    ```
 
 3. Server will appear automatically via mDNS
+
+**Note**: Network translation automatically falls back to on-device if server is unavailable
 
 ---
 
@@ -321,6 +349,8 @@ EMMA-android/
 - Check model file integrity
 - Verify sufficient storage space
 - Restart translation service
+- If network translation fails, system automatically falls back to on-device
+- Switch to "On-Device-Only" mode in Settings > Translation for offline operation
 
 #### Input Method Not Working
 - Verify FlorisBoard is installed
@@ -373,6 +403,9 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for gu
 Report security vulnerabilities via encrypted email to: security@example.org
 
 GPG Key: `0x1234567890ABCDEF`
+- [Submit bugs and feature requests](https://github.com/mollyim/mollyim-android/issues) on GitHub
+- Join us at [#mollyim:matrix.org](https://matrix.to/#/#mollyim:matrix.org) on Matrix (via space: [#mollyim-space:matrix.org](https://matrix.to/#/#mollyim-space:matrix.org))
+- For news, tips, and tricks, follow [@mollyim](https://fosstodon.org/@mollyim) on Mastodon
 
 ---
 
@@ -405,10 +438,38 @@ This project is licensed under the GNU AGPLv3 License - see [LICENSE](LICENSE) f
 - Kyber post-quantum encryption
 
 ### Roadmap
+- [x] Automatic offline translation fallback
+- [x] Configurable translation strategies
 - [ ] Additional language pairs
 - [ ] Enhanced NPU acceleration
 - [ ] Improved battery optimization
 - [ ] Advanced threat detection ML models
+<div align="center">
+<table>
+<tr>
+  <td>
+    <a href="https://nlnet.nl/" target="_blank">
+      <img src="https://nlnet.nl/logo/banner.svg" alt="NLnet logo" height="56" />
+    </a>
+  </td>
+  <td>
+    <a href="https://bahnhof.cloud/en/" target="_blank">
+      <img src="https://upload.wikimedia.org/wikipedia/de/c/c0/Bahnhof_AB_logo.svg" alt="Bahnhof logo" height="56" />
+    </a>
+  </td>
+  <td>
+    <a href="https://cloudsmith.com/blog/cloudsmith-loves-opensource/" target="_blank">
+      <img src="https://raw.githubusercontent.com/opswithranjan/CloudsmithLogo/main/CloudsmithLogoCropped.jpeg" alt="Cloudsmith logo" height="32" />
+    </a>
+  </td>
+  <td>
+    <a href="https://www.jetbrains.com/community/opensource/" target="_blank">
+      <img src="https://resources.jetbrains.com/storage/products/company/brand/logos/jetbrains.svg" alt="JetBrains logo" height="32" />
+    </a>
+  </td>
+</tr>
+</table>
+</div>
 
 ---
 
