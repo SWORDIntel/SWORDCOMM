@@ -1,0 +1,278 @@
+name: Security Scanning
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  trivy-scan:
+    name: Trivy Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner in repo mode
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          ignore-unfixed: true
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Generate Trivy report
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          output: 'trivy-report.txt'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-scan-report
+          path: trivy-report.txt
+          retention-days: 30
+
+  docker-scan:
+    name: Docker Image Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Android builder image
+        run: docker compose build android-builder
+
+      - name: Run Trivy scan on Android builder
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'image'
+          image-ref: 'emma-android-builder:latest'
+          format: 'sarif'
+          output: 'trivy-docker-android.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Android builder scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-docker-android.sarif'
+          category: 'docker-android-builder'
+
+      - name: Build Python server image
+        run: docker compose build python-server
+
+      - name: Run Trivy scan on Python server
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'image'
+          image-ref: 'emma-python-server:latest'
+          format: 'sarif'
+          output: 'trivy-docker-server.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Python server scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-docker-server.sarif'
+          category: 'docker-python-server'
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          allow-licenses: |
+            MIT
+            Apache-2.0
+            BSD-2-Clause
+            BSD-3-Clause
+            GPL-3.0
+            AGPL-3.0
+
+  secret-scanning:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: TruffleHog OSS
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+
+  crypto-validation:
+    name: Cryptographic Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for weak crypto
+        run: |
+          echo "Scanning for weak cryptographic patterns..."
+
+          # Check for weak algorithms
+          WEAK_PATTERNS=(
+            "MD5"
+            "SHA1"
+            "DES"
+            "RC4"
+            "RSA/ECB"
+            "AES/ECB"
+          )
+
+          FOUND_ISSUES=0
+          for pattern in "${WEAK_PATTERNS[@]}"; do
+            echo "Checking for: $pattern"
+            if grep -r "$pattern" --include="*.java" --include="*.kt" --include="*.cpp" .; then
+              echo "⚠️ Warning: Found potential weak crypto: $pattern"
+              FOUND_ISSUES=$((FOUND_ISSUES + 1))
+            fi
+          done
+
+          # Verify post-quantum crypto usage
+          echo ""
+          echo "Verifying post-quantum crypto usage..."
+          if grep -r "ML-KEM" --include="*.md" . || grep -r "ML-DSA" --include="*.md" .; then
+            echo "✅ Post-quantum crypto documentation found"
+          fi
+
+          if grep -r "liboqs" --include="*.cmake" --include="CMakeLists.txt" .; then
+            echo "✅ liboqs integration found"
+          fi
+
+          if [ $FOUND_ISSUES -gt 0 ]; then
+            echo ""
+            echo "⚠️ Found $FOUND_ISSUES potential weak crypto patterns"
+            echo "Please review and ensure these are false positives or intentional"
+          fi
+
+      - name: Validate crypto configuration
+        run: |
+          echo "Validating crypto configuration..."
+
+          # Check for production crypto flag
+          if grep -q "PRODUCTION_CRYPTO=ON" docker-compose.yml; then
+            echo "✅ Production crypto enabled in docker-compose.yml"
+          else
+            echo "⚠️ Production crypto not found in docker-compose.yml"
+          fi
+
+          # Check CMake configuration
+          if [ -f security-lib/src/main/cpp/CMakeLists.txt ]; then
+            if grep -q "liboqs" security-lib/src/main/cpp/CMakeLists.txt; then
+              echo "✅ liboqs configured in CMakeLists.txt"
+            else
+              echo "⚠️ liboqs not found in CMakeLists.txt"
+            fi
+          fi
+
+  android-security:
+    name: Android Security Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for insecure Android configurations
+        run: |
+          echo "Checking Android security configurations..."
+
+          # Check for debuggable in release
+          if grep -r "android:debuggable=\"true\"" app/src/main/AndroidManifest.xml; then
+            echo "❌ Error: Debuggable flag found in manifest"
+            exit 1
+          else
+            echo "✅ No debuggable flag in manifest"
+          fi
+
+          # Check for clear text traffic
+          if grep -r "android:usesCleartextTraffic=\"true\"" app/src/main/AndroidManifest.xml; then
+            echo "⚠️ Warning: Clear text traffic allowed"
+          else
+            echo "✅ Clear text traffic not allowed"
+          fi
+
+          # Check for backup allowed
+          if grep -r "android:allowBackup=\"true\"" app/src/main/AndroidManifest.xml; then
+            echo "⚠️ Warning: App backup is allowed"
+          fi
+
+          # Check for exported components without permission
+          EXPORTED_COUNT=$(grep -c "android:exported=\"true\"" app/src/main/AndroidManifest.xml || true)
+          echo "Found $EXPORTED_COUNT exported components"
+
+  security-summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs: [trivy-scan, docker-scan, secret-scanning, crypto-validation, android-security]
+    if: always()
+
+    steps:
+      - name: Generate security summary
+        run: |
+          echo "## 🔒 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Trivy Scan: ${{ needs.trivy-scan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Docker Scan: ${{ needs.docker-scan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Secret Scanning: ${{ needs.secret-scanning.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Crypto Validation: ${{ needs.crypto-validation.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Android Security: ${{ needs.android-security.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Recommendations" >> $GITHUB_STEP_SUMMARY
+          echo "- Review any security alerts in the Security tab" >> $GITHUB_STEP_SUMMARY
+          echo "- Ensure production crypto is enabled (PRODUCTION_CRYPTO=ON)" >> $GITHUB_STEP_SUMMARY
+          echo "- Verify liboqs version is 0.11.0+" >> $GITHUB_STEP_SUMMARY
+          echo "- Check for any weak cryptographic patterns" >> $GITHUB_STEP_SUMMARY

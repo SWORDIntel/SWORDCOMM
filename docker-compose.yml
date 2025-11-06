@@ -13,8 +13,7 @@ services:
         COMPILE_SDK_VERSION: android-35
     volumes:
       - ./app/build/outputs:/molly/app/build/outputs
-      - gradle-cache:/root/.gradle/cache
-      - gradle-wrapper:/root/.gradle/wrapper
+      - gradle-cache:/root/.gradle
     environment:
       # Build configuration
       - GRADLE_OPTS=-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.workers.max=4
@@ -32,7 +31,9 @@ services:
       - CI_KEYSTORE_PATH=${CI_KEYSTORE_PATH}
       - CI_KEYSTORE_PASSWORD=${CI_KEYSTORE_PASSWORD}
       - CI_KEYSTORE_ALIAS=${CI_KEYSTORE_ALIAS}
-    command: assembleDebug
+    # Note: Dockerfile has ENTRYPOINT ["./gradlew", "-PCI=true"]
+    # So this command becomes: ./gradlew -PCI=true assembleDebug
+    command: ["assembleDebug"]
 
   # Python translation server builder
   python-server:
@@ -49,7 +50,7 @@ services:
       - PYTHONUNBUFFERED=1
       - EMMA_SERVER_PORT=5353
       - EMMA_SERVER_HOST=0.0.0.0
-    command: python3 emma_server.py
+    command: ["python3", "emma_server.py"]
 
   # Development environment
   dev:
@@ -59,14 +60,15 @@ services:
       dockerfile: Dockerfile
     volumes:
       - .:/molly
-      - gradle-cache:/root/.gradle/cache
-      - gradle-wrapper:/root/.gradle/wrapper
+      - gradle-cache:/root/.gradle
     working_dir: /molly
     stdin_open: true
     tty: true
-    command: /bin/sh
+    entrypoint: ["/bin/sh"]
+    command: []
 
 volumes:
   gradle-cache:
-  gradle-wrapper:
+    driver: local
   python-cache:
+    driver: local
