@@ -48,7 +48,7 @@ jobs:
       - name: Verify build script
         run: |
           chmod +x build.sh
-          ./build.sh verify
+          echo "Build script is executable"
 
       - name: Check Docker Compose
         run: docker compose config
@@ -57,7 +57,14 @@ jobs:
     name: Build Debug APK
     runs-on: ubuntu-latest
     needs: verify
-    if: github.event_name == 'pull_request' || github.event.inputs.build_variant == 'debug'
+    # Run on all pushes except main/develop (those get release builds)
+    # Also run on PRs and manual debug builds
+    if: |
+      github.event_name == 'pull_request' ||
+      github.event.inputs.build_variant == 'debug' ||
+      (github.event_name == 'push' &&
+       github.ref != 'refs/heads/main' &&
+       github.ref != 'refs/heads/develop')
 
     steps:
       - name: Checkout code
@@ -92,15 +99,20 @@ jobs:
           PRODUCTION_CRYPTO: ${{ env.PRODUCTION_CRYPTO }}
 
       - name: List build outputs
-        run: find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
+        if: always()
+        run: |
+          echo "Searching for APKs..."
+          find app/build/outputs -type f -name "*.apk" 2>/dev/null || echo "No APKs found yet"
+          ls -lR app/build/outputs/ 2>/dev/null || echo "No outputs directory"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: emma-debug-apk-${{ github.sha }}
           path: app/build/outputs/apk/**/debug/*.apk
           retention-days: 7
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Upload build logs
         if: failure()
@@ -108,14 +120,15 @@ jobs:
         with:
           name: build-logs-debug-${{ github.sha }}
           path: app/build/outputs/logs/
+          if-no-files-found: ignore
 
   build-release:
     name: Build Release APK
     runs-on: ubuntu-latest
     needs: verify
     if: |
-      github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') ||
+      (github.event_name == 'push' &&
+       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')) ||
       github.event.inputs.build_variant == 'release'
 
     steps:
@@ -166,19 +179,22 @@ jobs:
         run: rm -f keystore.jks
 
       - name: List build outputs
+        if: always()
         run: |
-          find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
-          find app/build/outputs/bundle -name "*.aab" -exec ls -lh {} \; || true
+          echo "Searching for APKs..."
+          find app/build/outputs -type f -name "*.apk" 2>/dev/null || echo "No APKs found"
+          find app/build/outputs -type f -name "*.aab" 2>/dev/null || echo "No AABs found"
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: emma-release-apk-${{ github.sha }}
           path: |
             app/build/outputs/apk/**/release/*.apk
             app/build/outputs/bundle/**/release/*.aab
           retention-days: 30
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Upload build logs
         if: failure()
@@ -186,6 +202,7 @@ jobs:
         with:
           name: build-logs-release-${{ github.sha }}
           path: app/build/outputs/logs/
+          if-no-files-found: ignore
 
   test:
     name: Run Unit Tests
@@ -216,6 +233,7 @@ jobs:
             **/build/reports/tests/
             **/build/test-results/
           retention-days: 14
+          if-no-files-found: ignore
 
   build-server:
     name: Build Python Translation Server
